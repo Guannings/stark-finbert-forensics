@@ -1,0 +1,10 @@
+torch
+transformers
+duckdb
+pandas
+numpy
+yfinance
+rich
+matplotlib
+PyQt6
+pyqtgraph
