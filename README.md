@@ -234,6 +234,10 @@ BY USING THIS SOFTWARE, YOU AGREE TO ASSUME ALL RISKS ASSOCIATED WITH YOUR INVES
 
 ---
 
-## License
+## Development Methodology
 
-MIT
+The core financial strategy, system architecture, and analytical approach were conceptualized and designed by the author. The idea of combining large-scale historical headline data with real-time FinBERT scoring to produce data-backed trading verdicts is original work — from the choice of Jaccard similarity for headline matching, to the recency-weighted verdict formula, to the sentiment-momentum backtesting strategy.
+
+This project was built using an **AI-Accelerated Workflow**. The author is not a software developer by training — the domain expertise lies in quantitative finance and data analysis. Large Language Models (Gemini, Claude Opus 4.6) were utilized extensively to accelerate code implementation, generate syntax, scaffold boilerplate, and debug technical issues. This allowed development to remain focused on what matters: the quantitative logic, parameter design, signal validation, and risk management — rather than getting blocked on language-specific implementation details.
+
+In short: the *what* and *why* came from the author; the *how* was accelerated by AI tooling.
