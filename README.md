@@ -202,7 +202,7 @@ The backtester implements a sentiment-momentum strategy: go long when the 3-day 
 
 ### 1. Educational Purpose Only
 
-This software is provided strictly for educational and research purposes. It was built as a personal project by **PEHCAUX**, a student at **National Chengchi University (NCCU)**. It is not intended to serve as a source of financial advice, and the author is not a registered financial advisor, broker, or analyst. The algorithms, models, and analytical techniques implemented herein — including FinBERT-based natural language processing, DuckDB-powered headline similarity search, Jaccard similarity scoring, exponential recency weighting, and sentiment-momentum backtesting — are demonstrations of theoretical and applied concepts in quantitative finance and natural language processing. They should not be construed as a recommendation to buy, sell, or hold any specific security, asset class, or financial instrument.
+This software is provided strictly for educational and research purposes. It was built as a personal project by **PARVAUX**, a student at **National Chengchi University (NCCU)**. It is not intended to serve as a source of financial advice, and the author is not a registered financial advisor, broker, or analyst. The algorithms, models, and analytical techniques implemented herein — including FinBERT-based natural language processing, DuckDB-powered headline similarity search, Jaccard similarity scoring, exponential recency weighting, and sentiment-momentum backtesting — are demonstrations of theoretical and applied concepts in quantitative finance and natural language processing. They should not be construed as a recommendation to buy, sell, or hold any specific security, asset class, or financial instrument.
 
 ### 2. No Financial Advice
 
@@ -230,7 +230,7 @@ The author assumes no responsibility for hardware failure, system instability, e
 
 THIS SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, AND NON-INFRINGEMENT. IN NO EVENT SHALL THE AUTHOR OR COPYRIGHT HOLDER BE LIABLE FOR ANY CLAIM, DAMAGES, OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT, OR OTHERWISE, ARISING FROM, OUT OF, OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-BY USING THIS SOFTWARE, YOU AGREE TO ASSUME ALL RISKS ASSOCIATED WITH YOUR INVESTMENT DECISIONS AND HARDWARE USAGE, RELEASING THE AUTHOR (PEHCAUX) FROM ANY LIABILITY REGARDING YOUR FINANCIAL OUTCOMES OR SYSTEM INTEGRITY.
+BY USING THIS SOFTWARE, YOU AGREE TO ASSUME ALL RISKS ASSOCIATED WITH YOUR INVESTMENT DECISIONS AND HARDWARE USAGE, RELEASING THE AUTHOR (PARVAUX) FROM ANY LIABILITY REGARDING YOUR FINANCIAL OUTCOMES OR SYSTEM INTEGRITY.
 
 ---
 
@@ -241,3 +241,11 @@ The core financial strategy, system architecture, and analytical approach were c
 This project was built using an **AI-Accelerated Workflow**. The author is not a software developer by training — the domain expertise lies in quantitative finance and data analysis. Large Language Models (Gemini, Claude Opus 4.6) were utilized extensively to accelerate code implementation, generate syntax, scaffold boilerplate, and debug technical issues. This allowed development to remain focused on what matters: the quantitative logic, parameter design, signal validation, and risk management — rather than getting blocked on language-specific implementation details.
 
 In short: the *what* and *why* came from the author; the *how* was accelerated by AI tooling.
+
+---
+
+## Contributors
+
+1. **PARVAUX** — Project author. Strategy design, system architecture, quantitative logic, parameter tuning, and risk management.
+2. **Claude Opus 4.6** (Anthropic) — AI-assisted code implementation, syntax generation, and debugging.
+3. **Gemini** (Google) — AI-assisted code implementation and scaffolding.
