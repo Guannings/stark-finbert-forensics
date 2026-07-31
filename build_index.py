@@ -14,9 +14,7 @@ from rich.progress import SpinnerColumn, TextColumn, Progress
 
 console = Console()
 
-SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-PARQUET_PATH = os.path.join(SCRIPT_DIR, "STARK_SCORED_FIXED.parquet")
-INDEX_PATH = os.path.join(SCRIPT_DIR, "headline_index.parquet")
+from headline_analyzer import PARQUET_PATH, INDEX_PATH
 
 
 def build_index():
@@ -85,6 +83,8 @@ def build_index():
         border_style="green",
     ))
 
+
+main = build_index
 
 if __name__ == "__main__":
     build_index()

@@ -8,3 +8,4 @@ rich
 matplotlib
 PyQt6
 pyqtgraph
+sentence-transformers

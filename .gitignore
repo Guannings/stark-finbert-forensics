@@ -22,3 +22,8 @@ venv/
 # IDE
 .vscode/
 .idea/
+
+# Local data location pointer
+.stark_data_dir
+embed_cache/
+*.npz

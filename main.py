@@ -62,13 +62,9 @@ def main():
     tool = TOOLS[choice]
     print(f"\n  Launching {tool['name']}...\n")
 
-    # Run the selected module as __main__
     import importlib
     mod = importlib.import_module(tool["module"])
-
-    # Modules with main() get called; others run on import (backtester)
-    if hasattr(mod, "main"):
-        mod.main()
+    mod.main()
 
 
 if __name__ == "__main__":

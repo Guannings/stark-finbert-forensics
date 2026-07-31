@@ -30,8 +30,33 @@ TEXT_COLOR = "#E0E0E0"
 
 console = Console()
 
-PARQUET_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "STARK_SCORED_FIXED.parquet")
-INDEX_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "headline_index.parquet")
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+
+
+def _resolve_data_dir() -> str:
+    """Data directory priority: $STARK_DATA_DIR > .stark_data_dir file > repo dir.
+
+    The parquet files are multi-GB and live outside the repo; point to them with
+    either the STARK_DATA_DIR environment variable or a .stark_data_dir file
+    (gitignored) containing the path.
+    """
+    env = os.environ.get("STARK_DATA_DIR")
+    if env:
+        path = os.path.expanduser(env)
+        if os.path.isdir(path):
+            return path
+    marker = os.path.join(SCRIPT_DIR, ".stark_data_dir")
+    if os.path.exists(marker):
+        with open(marker) as f:
+            path = os.path.expanduser(f.read().strip())
+        if os.path.isdir(path):
+            return path
+    return SCRIPT_DIR
+
+
+DATA_DIR = _resolve_data_dir()
+PARQUET_PATH = os.path.join(DATA_DIR, "STARK_SCORED_FIXED.parquet")
+INDEX_PATH = os.path.join(DATA_DIR, "headline_index.parquet")
 
 # ── FinBERT lazy singleton ───────────────────────────────────────────────────
 _finbert_cache = {}
@@ -133,16 +158,16 @@ def _query_indexed(ticker: str, keywords: list[str], top_n: int,
                    date_from: datetime | None = None, date_to: datetime | None = None) -> pd.DataFrame:
     """Query deduped parquet index (sorted by ticker for fast row-group pruning)."""
     con = duckdb.connect()
-    kw_list = ", ".join(f"'{k}'" for k in keywords)
 
     date_clauses = ""
-    params = [INDEX_PATH, ticker.upper(), top_n]
+    params = [INDEX_PATH, ticker.upper(), keywords]
     if date_from is not None:
-        date_clauses += f" AND date >= ${len(params) + 1}"
         params.append(date_from.strftime("%Y-%m-%d"))
+        date_clauses += f" AND date >= ${len(params)}"
     if date_to is not None:
-        date_clauses += f" AND date <= ${len(params) + 1}"
         params.append(date_to.strftime("%Y-%m-%d"))
+        date_clauses += f" AND date <= ${len(params)}"
+    params.append(top_n)
 
     query = f"""
     WITH ticker_rows AS (
@@ -159,19 +184,19 @@ def _query_indexed(ticker: str, keywords: list[str], top_n: int,
             headline,
             date,
             sentiment_score,
-            len(list_intersect(words, [{kw_list}])) AS shared_count,
+            len(list_intersect(words, $3)) AS shared_count,
             CASE
-                WHEN len(list_distinct(list_concat(words, [{kw_list}]))) = 0 THEN 0
-                ELSE len(list_intersect(words, [{kw_list}]))::DOUBLE
-                     / len(list_distinct(list_concat(words, [{kw_list}])))::DOUBLE
+                WHEN len(list_distinct(list_concat(words, $3))) = 0 THEN 0
+                ELSE len(list_intersect(words, $3))::DOUBLE
+                     / len(list_distinct(list_concat(words, $3)))::DOUBLE
             END AS jaccard
         FROM ticker_rows
-        WHERE len(list_intersect(words, [{kw_list}])) >= 2
+        WHERE len(list_intersect(words, $3)) >= 2
     )
     SELECT headline, date, sentiment_score, shared_count, jaccard
     FROM scored
     ORDER BY shared_count DESC, jaccard DESC
-    LIMIT $3
+    LIMIT ${len(params)}
     """
 
     try:
@@ -193,20 +218,19 @@ def _query_parquet(ticker: str, keywords: list[str], top_n: int,
     con.execute("SET preserve_insertion_order=false")
     con.execute("SET threads=4")
 
-    kw_list = ", ".join(f"'{k}'" for k in keywords)
-
     date_clauses = ""
-    params = [PARQUET_PATH, ticker.upper(), top_n]
+    params = [PARQUET_PATH, ticker.upper(), keywords]
     if date_from is not None:
-        date_clauses += f" AND date >= ${len(params) + 1}"
         params.append(date_from.strftime("%Y-%m-%d"))
+        date_clauses += f" AND date >= ${len(params)}"
     if date_to is not None:
-        date_clauses += f" AND date <= ${len(params) + 1}"
         params.append(date_to.strftime("%Y-%m-%d"))
+        date_clauses += f" AND date <= ${len(params)}"
+    params.append(top_n)
 
     query = f"""
     WITH input_words AS (
-        SELECT [{kw_list}] AS kw
+        SELECT $3 AS kw
     ),
     ticker_headlines AS (
         SELECT
@@ -243,7 +267,7 @@ def _query_parquet(ticker: str, keywords: list[str], top_n: int,
     SELECT headline, date, sentiment_score, shared_count, jaccard
     FROM scored
     ORDER BY shared_count DESC, jaccard DESC
-    LIMIT $3
+    LIMIT ${len(params)}
     """
 
     try:
@@ -258,8 +282,26 @@ def _query_parquet(ticker: str, keywords: list[str], top_n: int,
 
 
 def find_similar_headlines(ticker: str, keywords: list[str], top_n: int = 20,
-                           date_from: datetime | None = None, date_to: datetime | None = None) -> pd.DataFrame:
-    """DuckDB word-overlap query with jaccard tiebreaker. Returns top matches."""
+                           date_from: datetime | None = None, date_to: datetime | None = None,
+                           headline: str | None = None, method: str = "auto") -> pd.DataFrame:
+    """Find historical headlines similar to the input.
+
+    method="auto" uses embedding-based semantic search when a raw headline is
+    provided (falling back to lexical on any failure); "lexical" forces the
+    DuckDB word-overlap query with jaccard tiebreaker; "semantic" requires
+    embeddings and raises if unavailable.
+    """
+    if method != "lexical" and headline:
+        try:
+            import semantic_search
+            return semantic_search.semantic_search(
+                ticker, headline, top_n=top_n, date_from=date_from, date_to=date_to
+            )
+        except Exception as e:
+            if method == "semantic":
+                raise
+            console.print(f"[{NEON_YELLOW}]Semantic search unavailable ({e}) — using keyword search.[/]")
+
     if not keywords:
         return pd.DataFrame()
 
@@ -350,14 +392,18 @@ def compute_verdict(matches: pd.DataFrame, returns: dict,
     scores = matches["sentiment_score"]
 
     # Recency weighting via exponential decay
+    weight_by_date = {}
     if "date" in matches.columns and matches["date"].notna().any():
         now = pd.Timestamp.now().normalize()
-        days_ago = (now - pd.to_datetime(matches["date"])).dt.total_seconds() / 86400
+        match_dates = pd.to_datetime(matches["date"])
+        days_ago = (now - match_dates).dt.total_seconds() / 86400
         days_ago = days_ago.clip(lower=0).values
         decay = np.log(2) / recency_half_life_days
         weights = np.exp(-decay * days_ago)
         result["avg_sentiment"] = float(np.average(scores.values, weights=weights))
         result["recency_weighted"] = True
+        for d, w in zip(match_dates.dt.normalize(), weights):
+            weight_by_date[d] = max(weight_by_date.get(d, 0.0), w)
     else:
         result["avg_sentiment"] = scores.mean()
     result["pct_bullish"] = (scores > 0.1).mean() * 100
@@ -366,13 +412,17 @@ def compute_verdict(matches: pd.DataFrame, returns: dict,
     # Sentiment signal: scale from -1..+1 to -100..+100
     sent_signal = max(-1, min(1, result["avg_sentiment"])) * 100
 
-    # Price signal from forward returns
+    # Price signal from forward returns (same recency weights as sentiment)
     price_signal = 0.0
     price_count = 0
     for period in ["1d", "5d", "10d"]:
-        vals = [r[period] for r in returns.values() if r.get(period) is not None]
+        vals, ws = [], []
+        for d, r in returns.items():
+            if r.get(period) is not None:
+                vals.append(r[period])
+                ws.append(weight_by_date.get(d, 1.0))
         if vals:
-            avg = sum(vals) / len(vals)
+            avg = float(np.average(vals, weights=ws))
             result[f"avg_{period}"] = avg
             price_signal += avg
             price_count += 1
@@ -386,8 +436,10 @@ def compute_verdict(matches: pd.DataFrame, returns: dict,
     else:
         composite = sent_signal
 
-    abs_composite = abs(composite)
-    result["confidence"] = int(min(99, max(10, 50 + abs_composite * 0.5)))
+    # Confidence: signal magnitude, discounted when the sample is thin.
+    # A NEUTRAL verdict on 3 matches reads low, not a baked-in 50%+.
+    sample_factor = min(1.0, len(matches) / 20)
+    result["confidence"] = int(round(min(95.0, abs(composite)) * sample_factor))
 
     if composite > 10:
         result["verdict"] = "BULLISH"
@@ -433,9 +485,12 @@ def render_output(ticker: str, headline: str, keywords: list[str],
         padding=(0, 2),
     ))
 
-    # ── Keywords used ─────────────────────────────────────────────────────
-    kw_str = ", ".join(keywords) if keywords else "(none)"
-    console.print(f"  [{DIM_TEXT}]Keywords: {kw_str}[/]")
+    # ── Match mode ────────────────────────────────────────────────────────
+    if "similarity" in matches.columns:
+        console.print(f"  [{DIM_TEXT}]Match mode: semantic (embedding cosine similarity)[/]")
+    else:
+        kw_str = ", ".join(keywords) if keywords else "(none)"
+        console.print(f"  [{DIM_TEXT}]Keywords: {kw_str}[/]")
     console.print(f"  [{DIM_TEXT}]Matches found: {len(matches)}[/]")
     console.print()
 
@@ -498,16 +553,20 @@ def render_output(ticker: str, headline: str, keywords: list[str],
         console.print(f"  [{NEON_YELLOW}]No similar headlines found for {ticker.upper()}.[/]")
         return
 
+    has_sim = "similarity" in matches.columns
+
     # Compute available width for headline: total - fixed cols - panel borders
     term_width = console.width or 80
     # Fixed cols: # (3) + Date (10) + Sent (6) + 1D (7) + 5D (7) + 10D (7) + separators (~12) + panel padding (~6)
-    hl_width = max(20, term_width - 62)
+    hl_width = max(20, term_width - 62 - (6 if has_sim else 0))
 
     tbl = Table(box=box.SIMPLE, show_header=True, header_style=f"bold {NEON_CYAN}",
                 row_styles=[TEXT_COLOR, DIM_TEXT], expand=False)
     tbl.add_column("#", justify="right", width=3, no_wrap=True)
     tbl.add_column("Date", justify="center", width=10, no_wrap=True)
     tbl.add_column("Headline", width=hl_width, no_wrap=True, overflow="ellipsis")
+    if has_sim:
+        tbl.add_column("Sim", justify="center", width=5, no_wrap=True)
     tbl.add_column("Sent", justify="center", width=6, no_wrap=True)
     tbl.add_column("1D", justify="right", width=7, no_wrap=True)
     tbl.add_column("5D", justify="right", width=7, no_wrap=True)
@@ -532,15 +591,16 @@ def render_output(ticker: str, headline: str, keywords: list[str],
         d_norm = pd.Timestamp(date_val).normalize()
         ret = returns.get(d_norm, {})
 
-        tbl.add_row(
-            str(i + 1),
-            date_str,
-            hl,
+        cells = [str(i + 1), date_str, hl]
+        if has_sim:
+            cells.append(f"[{NEON_CYAN}]{row['similarity']:.2f}[/]")
+        cells += [
             sent_str,
             fmt_ret(ret.get("1d")),
             fmt_ret(ret.get("5d")),
             fmt_ret(ret.get("10d")),
-        )
+        ]
+        tbl.add_row(*cells)
 
     console.print(Panel(tbl, title=f"[bold {NEON_CYAN}]TOP SIMILAR HEADLINES[/]",
                         border_style=DIM_TEXT, padding=(0, 0)))
@@ -548,7 +608,8 @@ def render_output(ticker: str, headline: str, keywords: list[str],
 
 
 def analyze(ticker: str, headline: str, top_n: int = 20,
-            date_from: datetime | None = None, date_to: datetime | None = None):
+            date_from: datetime | None = None, date_to: datetime | None = None,
+            method: str = "auto"):
     """Run full analysis pipeline for a ticker + headline."""
     ticker = ticker.strip().upper()
     headline = headline.strip()
@@ -562,7 +623,7 @@ def analyze(ticker: str, headline: str, top_n: int = 20,
         return
 
     keywords = extract_keywords(headline)
-    if len(keywords) < 2:
+    if method == "lexical" and len(keywords) < 2:
         console.print(f"[{NEON_YELLOW}]Only {len(keywords)} keyword(s) extracted — need at least 2 for matching.[/]")
         console.print(f"[{DIM_TEXT}]Try a longer or more specific headline.[/]")
         return
@@ -584,7 +645,8 @@ def analyze(ticker: str, headline: str, top_n: int = 20,
 
     console.print(f"  [{NEON_CYAN}]Searching {ticker} headlines{window_label}...[/]", end="")
     matches = find_similar_headlines(ticker, keywords, top_n=top_n,
-                                     date_from=date_from, date_to=date_to)
+                                     date_from=date_from, date_to=date_to,
+                                     headline=headline, method=method)
     console.print(f" [{NEON_GREEN}]{len(matches)} matches[/]")
 
     if matches.empty:
@@ -601,7 +663,8 @@ def analyze(ticker: str, headline: str, top_n: int = 20,
 
 
 def analyze_multi(tickers: list[str], headline: str, top_n: int = 20,
-                  date_from: datetime | None = None, date_to: datetime | None = None):
+                  date_from: datetime | None = None, date_to: datetime | None = None,
+                  method: str = "auto"):
     """Run analysis across multiple tickers and render a comparison table."""
     headline = headline.strip()
     if len(headline) < 5:
@@ -609,7 +672,7 @@ def analyze_multi(tickers: list[str], headline: str, top_n: int = 20,
         return
 
     keywords = extract_keywords(headline)
-    if len(keywords) < 2:
+    if method == "lexical" and len(keywords) < 2:
         console.print(f"[{NEON_YELLOW}]Only {len(keywords)} keyword(s) extracted — need at least 2 for matching.[/]")
         return
 
@@ -627,7 +690,8 @@ def analyze_multi(tickers: list[str], headline: str, top_n: int = 20,
         t = t.strip().upper()
         console.print(f"  [{NEON_CYAN}]Analyzing {t}...[/]", end="")
         matches = find_similar_headlines(t, keywords, top_n=top_n,
-                                         date_from=date_from, date_to=date_to)
+                                         date_from=date_from, date_to=date_to,
+                                         headline=headline, method=method)
         if matches.empty:
             verdict = compute_verdict(matches, {})
             results.append({"ticker": t, "matches": matches, "returns": {}, "verdict": verdict})
@@ -751,8 +815,11 @@ def main():
     parser.add_argument("--window", type=str, default=None, help="Time window: 1w, 1m, 3m, 6m, 1y")
     parser.add_argument("--since", type=str, default=None, help="Start date (YYYY-MM-DD)")
     parser.add_argument("--until", type=str, default=None, help="End date (YYYY-MM-DD)")
+    parser.add_argument("--lexical", action="store_true",
+                        help="Force keyword/jaccard matching instead of semantic search")
 
     args = parser.parse_args()
+    method = "lexical" if args.lexical else "auto"
 
     if args.ticker and args.headline:
         date_from, date_to = parse_time_window(args.window, args.since, getattr(args, "until"))
@@ -760,10 +827,10 @@ def main():
         tickers = [t.strip().upper() for t in args.ticker.split(",") if t.strip()]
         if len(tickers) > 1:
             analyze_multi(tickers, args.headline, top_n=args.top_n,
-                          date_from=date_from, date_to=date_to)
+                          date_from=date_from, date_to=date_to, method=method)
         else:
             analyze(tickers[0], args.headline, top_n=args.top_n,
-                    date_from=date_from, date_to=date_to)
+                    date_from=date_from, date_to=date_to, method=method)
     else:
         repl()
 

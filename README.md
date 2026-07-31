@@ -4,15 +4,15 @@
 
 STARK is a quantitative sentiment analysis platform built to answer one question: **when a news headline drops, what historically happens to the stock price?**
 
-The system combines a dataset of **85 million+ pre-scored financial headlines** (spanning 2009 to 2026) with **FinBERT**, a BERT-based NLP model fine-tuned specifically for financial text, to produce actionable sentiment verdicts grounded in real historical outcomes. Rather than relying on opinion or speculation, every verdict is backed by data: the system finds historically similar headlines, looks up what the stock actually did in the 1, 5, and 10 trading days that followed, and synthesizes a weighted signal from both the sentiment distribution and the observed price action.
+The system combines a dataset of **85 million+ pre-scored financial headlines** (spanning 2009 to 2026) with **FinBERT**, a BERT-based NLP model fine-tuned specifically for financial text, to produce actionable sentiment verdicts grounded in real historical outcomes. Rather than relying on opinion or speculation, every verdict is backed by data: the system finds historically similar headlines via **local embedding-based semantic search** (BAAI/bge-base-en-v1.5 — "Apple tops forecasts" matches "iPhone sales help Apple beat estimates" even with zero shared keywords), looks up what the stock actually did in the 1, 5, and 10 trading days that followed, and synthesizes a weighted signal from both the sentiment distribution and the observed price action.
 
 This repository contains three independent tools that share a common analysis backend. You do not need to run them in sequence — each one is a standalone entry point designed for a different use case:
 
 - **Headline Analyzer** — a command-line tool for fast, scriptable headline analysis. Supports single tickers, multi-ticker comparison, time-windowed filtering, and an interactive REPL mode.
-- **Strategy Backtester** — a matplotlib-based visual backtesting tool that plots historical sentiment-driven trading signals (buy/sell markers, sentiment oscillator) and supports FinBERT headline overlays to test how a given headline's sentiment level would have performed as a signal filter.
+- **Strategy Backtester** — a full sentiment-momentum backtest over the same headline dataset: equity curve vs. buy-and-hold, Sharpe, max drawdown, transaction costs, and volatility-targeted sizing, with next-day execution to avoid look-ahead bias. Includes the visual forensics chart (buy/sell markers, sentiment oscillator) and FinBERT headline overlays.
 - **Terminal Dashboard** — a full PyQt6 GUI with live price charts, a sentiment oscillator, summary metric cards, and an integrated headline analysis panel with a results table.
 
-All three tools import their core logic from `headline_analyzer.py`, which handles FinBERT model loading, keyword-based headline search via DuckDB, forward return computation via yfinance, and verdict generation with exponential recency weighting. This means there is zero duplicated NLP or search logic across the codebase.
+All three tools import their core logic from `headline_analyzer.py`, which handles FinBERT model loading, headline search (semantic embeddings via `semantic_search.py`, with a keyword/DuckDB fallback), forward return computation via yfinance, and verdict generation with exponential recency weighting. This means there is zero duplicated NLP or search logic across the codebase.
 
 **If you are unsure where to start**, run `python main.py` — it launches an interactive menu that lets you pick a tool.
 
@@ -30,15 +30,21 @@ pip install -r requirements.txt
 
 ### Data Setup
 
-The system requires a pre-scored headline dataset in parquet format. Due to its size (~several GB), it is not included in this repository. Place `STARK_SCORED_FIXED.parquet` in the project root directory, then build the fast search index:
+The system requires a pre-scored headline dataset in parquet format. Due to its size (~several GB), it is not included in this repository.
+
+The data files can live anywhere on disk. The tools look for them in this order:
+
+1. The directory in the `STARK_DATA_DIR` environment variable
+2. The directory named in a `.stark_data_dir` file in the project root (one line, gitignored)
+3. The project root itself
+
+Point one of those at the folder containing `STARK_SCORED_FIXED.parquet`, then build the fast search index:
 
 ```bash
 python build_index.py
 ```
 
-This deduplicates the raw headlines, sorts them by ticker for fast row-group pruning, and writes a compressed parquet index. It only needs to be run once.
-
-The backtester additionally requires `TRADABLE_DATASET.csv` with the following columns: `ticker`, `date`, `close`, `daily_score`.
+This deduplicates the raw headlines, sorts them by ticker for fast row-group pruning, and writes a compressed parquet index. It only needs to be run once. All tools — including the backtester, which derives its daily sentiment series from this same dataset — share this single data source.
 
 ### Quick Start
 
@@ -65,10 +71,11 @@ python stark_terminal.py
 
 **Notes:**
 - The FinBERT model (`ProsusAI/finbert`) is approximately 440 MB and is downloaded automatically on first run via Hugging Face Transformers.
+- The embedding model (`BAAI/bge-base-en-v1.5`, ~440 MB) is downloaded automatically on the first semantic search. Per-ticker embedding caches use roughly 1.5 MB of disk per 1,000 headlines.
 - DuckDB headline queries on the raw parquet (before building the index) can consume up to 12 GB of RAM. Building the index with `build_index.py` reduces query memory usage significantly.
 - The PyQt6 terminal dashboard (`stark_terminal.py`) requires a graphical display environment and will not work in headless/SSH sessions without X-forwarding.
 - On Apple Silicon Macs, FinBERT automatically uses the MPS backend for GPU-accelerated inference. On systems with NVIDIA GPUs, CUDA is used. CPU inference is the fallback and works on all platforms.
-- The backtester loads the full `TRADABLE_DATASET.csv` into memory on startup. For very large datasets, ensure adequate RAM is available.
+- The backtester aggregates daily sentiment per ticker directly from the headline index via DuckDB, so it needs no additional dataset.
 
 ---
 
@@ -104,22 +111,23 @@ python headline_analyzer.py
 | `--window` | Time window filter: `1w`, `1m`, `3m`, `6m`, `1y` |
 | `--since` | Start date for headline search (`YYYY-MM-DD`) |
 | `--until` | End date for headline search (`YYYY-MM-DD`) |
+| `--lexical` | Force keyword/Jaccard matching instead of semantic search |
 
 In multi-ticker mode, FinBERT scores the headline once (since the score is ticker-agnostic), then runs the historical search and forward return analysis independently for each ticker, and finally renders a side-by-side comparison table.
 
 ### 2. Strategy Backtester (`backtester.py`)
 
-Visual backtesting tool with matplotlib charts.
+Sentiment-momentum backtest with performance metrics and matplotlib charts.
 
 ```bash
 python backtester.py
 ```
 
 1. Enter a ticker symbol (e.g., `NVDA`, `TSLA`, `AAPL`)
-2. The system plots a two-panel chart: price action with buy/sell trade markers (top), and a sentiment oscillator with the buy threshold (bottom)
-3. After the chart displays, you are prompted to optionally enter a headline
-4. If a headline is entered, the system re-renders the chart with a FinBERT overlay: a horizontal reference line on the sentiment panel at the headline's FinBERT score, and shaded signal zones on the price panel where the historical sentiment met or exceeded that score while price was above the 50-day SMA
-5. A summary prints showing how many hypothetical signal points were identified and their average 1/5/10-day forward returns
+2. The system derives the ticker's daily sentiment from the headline index, joins it with yfinance prices, runs the backtest, and prints a results table: total return, CAGR, annualized volatility, Sharpe, max drawdown, trade count, time in market, and daily win rate — side by side with buy-and-hold
+3. A three-panel chart displays: price action with buy/sell trade markers (top), strategy vs. buy-and-hold equity curve on a log scale (middle), and the sentiment oscillator with the buy threshold (bottom)
+4. After the chart closes, you are prompted to optionally enter a headline
+5. If a headline is entered, the chart re-renders with a FinBERT overlay: a horizontal reference line on the sentiment panel at the headline's FinBERT score, and shaded signal zones on the price panel where the historical sentiment met or exceeded that score while price was above the 50-day SMA. A summary prints the average 1/5/10-day forward returns measured from each zone's entry day (entry days only, so overlapping days don't inflate the sample)
 
 ### 3. Terminal Dashboard (`stark_terminal.py`)
 
@@ -151,10 +159,10 @@ Reads the raw `STARK_SCORED_FIXED.parquet`, deduplicates headlines per ticker, s
 ```
 main.py                  <- launcher menu (pick a tool)
 headline_analyzer.py     <- core analysis engine
-      |            |
-      v            v
-backtester.py   stark_terminal.py
-(matplotlib)    (PyQt6 + pyqtgraph)
+      |            |            \
+      v            v             v
+backtester.py   stark_terminal.py   semantic_search.py
+(matplotlib)    (PyQt6 + pyqtgraph) (embeddings + per-ticker cache)
 
 build_index.py           <- one-time index builder
 ```
@@ -163,11 +171,11 @@ build_index.py           <- one-time index builder
 
 - `score_headline_live(headline)` — scores a headline with FinBERT, returns a float in [-1, +1]
 - `extract_keywords(headline)` — tokenizes and filters a headline into search keywords
-- `find_similar_headlines(ticker, keywords, ...)` — DuckDB-powered keyword overlap search with Jaccard similarity ranking
+- `find_similar_headlines(ticker, keywords, ..., headline=, method=)` — semantic embedding search (via `semantic_search.py`) when a raw headline is provided, with automatic fallback to DuckDB keyword-overlap search ranked by Jaccard similarity
 - `compute_forward_returns(ticker, dates)` — bulk yfinance download + 1/5/10-day forward return computation
 - `compute_verdict(matches, returns)` — synthesizes sentiment distribution and price outcomes into a BULLISH/BEARISH/NEUTRAL verdict with confidence score and exponential recency weighting
 
-**`backtester.py`** imports only `score_headline_live` — it has its own strategy logic (volatility sizing, SMA crossover, sentiment threshold signals) and uses FinBERT purely for the headline overlay feature.
+**`backtester.py`** imports `score_headline_live` plus the shared data paths — its daily sentiment series is aggregated from the same headline index the analyzer searches, and it layers its own strategy logic (volatility sizing, SMA crossover, sentiment threshold signals, next-day execution, transaction costs) on top.
 
 **`stark_terminal.py`** imports five functions from the analyzer and uses them to power the headline analysis panel in the GUI.
 
@@ -177,7 +185,9 @@ build_index.py           <- one-time index builder
 
 ### Headline Search
 
-When you enter a headline, the system extracts keywords (lowercased, stopwords removed, deduplicated) and queries the headline index using DuckDB. The query computes word overlap between your keywords and every headline for the target ticker, filters to matches with at least 2 shared words, and ranks by shared word count with Jaccard similarity as a tiebreaker. DuckDB's predicate pushdown on the ticker-sorted parquet means only the relevant row groups are read from disk.
+**Semantic mode (default):** the input headline and every historical headline for the ticker are embedded with `BAAI/bge-base-en-v1.5` (running locally on MPS/CUDA/CPU via sentence-transformers), and matches are ranked by cosine similarity with a noise floor of 0.55. This captures paraphrase — "tops forecasts" matches "beats estimates" — which keyword overlap cannot. The first search for a ticker embeds its full deduped headline history (roughly a minute per 100k headlines on Apple Silicon) and caches the embeddings under `embed_cache/` in the data directory; subsequent searches load the cache instantly. Caches invalidate automatically when the headline index is rebuilt. Oversized groups (e.g. the `MARKET` bucket) are capped at the most recent 200k headlines.
+
+**Lexical mode (fallback / `--lexical`):** the system extracts keywords (lowercased, stopwords removed, deduplicated) and queries the headline index using DuckDB. The query computes word overlap between your keywords and every headline for the target ticker, filters to matches with at least 2 shared words, and ranks by shared word count with Jaccard similarity as a tiebreaker. DuckDB's predicate pushdown on the ticker-sorted parquet means only the relevant row groups are read from disk. This mode runs automatically if sentence-transformers is not installed.
 
 ### FinBERT Scoring
 
@@ -190,11 +200,11 @@ The verdict combines two signals:
 - **Sentiment signal (40% weight):** the recency-weighted average sentiment of matched historical headlines, scaled to [-100, +100]
 - **Price signal (60% weight):** the average forward returns (1D, 5D, 10D) after those historical headlines, scaled and clamped to [-100, +100]
 
-Recency weighting applies an exponential decay with a half-life of 180 days, so recent headlines carry more influence than older ones. The composite score determines the verdict: above +10 is BULLISH, below -10 is BEARISH, and in between is NEUTRAL. Confidence scales with the magnitude of the composite signal.
+Recency weighting applies an exponential decay with a half-life of 180 days, so recent headlines carry more influence than older ones — the same weights are applied to both the sentiment average and the forward-return averages. The composite score determines the verdict: above +10 is BULLISH, below -10 is BEARISH, and in between is NEUTRAL. Confidence scales with the magnitude of the composite signal and is discounted when fewer than 20 matches were found, so a weak signal on a thin sample reads as low confidence rather than defaulting to 50%+.
 
 ### Backtester Strategy
 
-The backtester implements a sentiment-momentum strategy: go long when the 3-day smoothed sentiment exceeds 0.5 AND the closing price is above the 50-day SMA. Position sizing is volatility-targeted (target volatility of 40%, capped at 10% of capital per position). Trade markers on the chart are color-coded by the sentiment score at the time of entry/exit using a red-yellow-green colormap.
+The backtester implements a sentiment-momentum strategy: go long when the 3-day smoothed sentiment exceeds 0.5 AND the closing price is above the 50-day SMA. A signal generated on day *t* is executed on day *t+1*, so the backtest never trades on information it wouldn't have had yet. Position sizing is volatility-targeted (40% annualized target, capped at fully invested), and 15 bps of transaction cost is charged on every position change. The equity curve compounds daily strategy returns from an initial $1,000,000 and is compared against buy-and-hold over the same period. Trade markers on the chart are color-coded by the sentiment score at the time of entry/exit using a red-yellow-green colormap.
 
 ---
 
@@ -214,7 +224,7 @@ All investments involve risk, including the possible loss of principal.
 
 **a. Past Performance:** Historical sentiment scores, forward returns (1-day, 5-day, 10-day), and backtested strategy performance presented by this software are derived from historical data and are not indicative of future results. Markets are inherently unpredictable, and historical patterns may not repeat.
 
-**b. Model Limitations:** The headline similarity search is based on keyword overlap (Jaccard similarity), which is a lexical approximation and does not capture semantic nuance, sarcasm, or context-dependent meaning. FinBERT, while fine-tuned on financial text, is a probabilistic model that can produce incorrect or misleading sentiment scores, particularly on ambiguous, novel, or domain-specific headlines.
+**b. Model Limitations:** The headline similarity search uses embedding cosine similarity (with a keyword-overlap fallback), which captures paraphrase but can still surface topically related headlines describing materially different events, and does not reliably capture sarcasm or context-dependent meaning. FinBERT, while fine-tuned on financial text, is a probabilistic model that can produce incorrect or misleading sentiment scores, particularly on ambiguous, novel, or domain-specific headlines.
 
 **c. Signal Limitations:** The sentiment-momentum strategy implemented in the backtester uses fixed thresholds (sentiment > 0.5, price > 50-day SMA) that were not optimized for any specific market regime. These thresholds may fail in unprecedented macroeconomic environments, during liquidity crises, or in markets with structural changes.
 

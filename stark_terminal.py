@@ -4,7 +4,7 @@ import duckdb
 import yfinance as yf
 import pandas as pd
 import numpy as np
-from datetime import datetime
+from datetime import datetime, timezone
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QVBoxLayout, QHBoxLayout,
     QWidget, QLineEdit, QPushButton, QLabel, QFrame, QComboBox,
@@ -17,6 +17,7 @@ import pyqtgraph as pg
 from headline_analyzer import (
     score_headline_live, find_similar_headlines, extract_keywords,
     compute_forward_returns, compute_verdict,
+    INDEX_PATH, PARQUET_PATH,
 )
 
 # ── Styling ──────────────────────────────────────────────────────────
@@ -29,9 +30,8 @@ NEON_CYAN = "#00E5FF"
 TEXT_COLOR = "#E0E0E0"
 DIM_TEXT = "#666"
 
-PARQUET_GLOB = os.path.join(
-    os.path.dirname(os.path.abspath(__file__)), "STARK_SCORED_FIXED.parquet"
-)
+# Prefer the deduped index (fast, low memory); fall back to the raw parquet
+DATA_SOURCE = INDEX_PATH if os.path.exists(INDEX_PATH) else PARQUET_PATH
 
 
 # ── Custom Date Axis ─────────────────────────────────────────────────
@@ -42,7 +42,7 @@ class DateAxis(pg.AxisItem):
         strings = []
         for v in values:
             try:
-                dt = datetime.utcfromtimestamp(v)
+                dt = datetime.fromtimestamp(v, tz=timezone.utc)
                 if spacing > 86400 * 180:
                     strings.append(dt.strftime("%Y"))
                 elif spacing > 86400 * 10:
@@ -272,9 +272,9 @@ class StarkTerminal(QMainWindow):
             else:
                 self.finbert_label.setText("FinBERT: unavailable")
 
-            # Find similar headlines
+            # Find similar headlines (semantic when available, keyword fallback)
             keywords = extract_keywords(headline)
-            matches = find_similar_headlines(ticker, keywords, top_n=20)
+            matches = find_similar_headlines(ticker, keywords, top_n=20, headline=headline)
 
             # Compute verdict
             if not matches.empty:
@@ -354,7 +354,7 @@ class StarkTerminal(QMainWindow):
                   AND date >= '2000-01-01'
                 ORDER BY date
                 """,
-                [PARQUET_GLOB, ticker],
+                [DATA_SOURCE, ticker],
             ).fetchdf()
             con.close()
 
@@ -467,8 +467,12 @@ class StarkTerminal(QMainWindow):
 
 
 # ── Entry point ──────────────────────────────────────────────────────
-if __name__ == "__main__":
+def main():
     app = QApplication(sys.argv)
     window = StarkTerminal()
     window.show()
     sys.exit(app.exec())
+
+
+if __name__ == "__main__":
+    main()
