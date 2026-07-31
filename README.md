@@ -12,7 +12,7 @@ The individual tools remain standalone entry points sharing the same analysis ba
 
 - **Headline Analyzer** — a command-line tool for fast, scriptable headline analysis. Supports single tickers, multi-ticker comparison, time-windowed filtering, and an interactive REPL mode.
 - **Strategy Backtester** — a full sentiment-momentum backtest over the same headline dataset: equity curve vs. buy-and-hold, Sharpe, max drawdown, transaction costs, and volatility-targeted sizing, with next-day execution to avoid look-ahead bias. Includes the visual forensics chart (buy/sell markers, sentiment oscillator) and FinBERT headline overlays.
-- **Terminal Dashboard** — a full PyQt6 GUI with live price charts, a sentiment oscillator, summary metric cards, and an integrated headline analysis panel with a results table.
+- **Terminal Dashboard** — a full PyQt6 GUI with live price charts, a sentiment oscillator, summary metric cards, and an integrated headline analysis panel that shows the verdict, the matching historical headlines, and a signal equity curve (strategy vs. buy-and-hold) for trading headlines like the one entered.
 
 All three tools import their core logic from `headline_analyzer.py`, which handles FinBERT model loading, headline search (semantic embeddings via `semantic_search.py`, with a keyword/DuckDB fallback), forward return computation via yfinance, and verdict generation with exponential recency weighting. This means there is zero duplicated NLP or search logic across the codebase.
 
@@ -236,7 +236,7 @@ This isn't a failure of the project — it's the project working as intended: a 
 
 ### 1. Educational Purpose Only
 
-This software is provided strictly for educational and research purposes. It was built as a personal project by **PARVAUX**, a student at **National Chengchi University (NCCU)**. It is not intended to serve as a source of financial advice, and the author is not a registered financial advisor, broker, or analyst. The algorithms, models, and analytical techniques implemented herein — including FinBERT-based natural language processing, DuckDB-powered headline similarity search, Jaccard similarity scoring, exponential recency weighting, and sentiment-momentum backtesting — are demonstrations of theoretical and applied concepts in quantitative finance and natural language processing. They should not be construed as a recommendation to buy, sell, or hold any specific security, asset class, or financial instrument.
+This software is provided strictly for educational and research purposes. It was built as a personal project by **PARVAUX**, a student at **National Chengchi University (NCCU)**. It is not intended to serve as a source of financial advice, and the author is not a registered financial advisor, broker, or analyst. The algorithms, models, and analytical techniques implemented herein — including FinBERT-based natural language processing, embedding-based semantic headline search (with a DuckDB/Jaccard fallback), exponential recency weighting, sentiment-momentum backtesting, and its out-of-sample validation — are demonstrations of theoretical and applied concepts in quantitative finance and natural language processing. They should not be construed as a recommendation to buy, sell, or hold any specific security, asset class, or financial instrument.
 
 ### 2. No Financial Advice
 
@@ -270,7 +270,7 @@ The author assumes no responsibility for hardware failure, system instability, e
 
 ## Development Methodology
 
-The core financial strategy, system architecture, and analytical approach were conceptualized and designed by the author. The idea of combining large-scale historical headline data with real-time FinBERT scoring to produce data-backed trading verdicts is original work — from the choice of Jaccard similarity for headline matching, to the recency-weighted verdict formula, to the sentiment-momentum backtesting strategy.
+The core idea, system architecture, and analytical approach were conceptualized and designed by the author: combining large-scale historical headline data with real-time FinBERT scoring to produce data-backed, event-study verdicts — from embedding-based semantic headline matching, to the recency-weighted verdict formula, to the sentiment-momentum backtest and its out-of-sample validation. That validation is deliberately included even though it falsifies the trading strategy (see the "Validation" section): the goal is a system honest enough to test its own claims, not one that flatters them.
 
 This project was built using an **AI-Accelerated Workflow**. The author is not a software developer by training — the domain expertise lies in quantitative finance and data analysis. Large Language Models (Gemini, Claude Opus 4.6) were utilized extensively to accelerate code implementation, generate syntax, scaffold boilerplate, and debug technical issues. This allowed development to remain focused on what matters: the quantitative logic, parameter design, signal validation, and risk management — rather than getting blocked on language-specific implementation details.
 

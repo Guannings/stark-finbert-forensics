@@ -15,6 +15,7 @@ BANNER = """
 |____/  |_/_/   \\_|_| \\_|_|\\_\\
 
   Sentiment Analysis Suite
+  From a headline to a verdict to an equity curve — grounded in 85M+ scored headlines.
 """
 
 TOOLS = {
