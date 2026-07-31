@@ -652,7 +652,7 @@ def analyze(ticker: str, headline: str, top_n: int = 20,
     if matches.empty:
         verdict = compute_verdict(matches, {})
         render_output(ticker, headline, keywords, matches, {}, verdict, live_score)
-        return
+        return {"matches": matches, "returns": {}, "verdict": verdict, "live_score": live_score}
 
     console.print(f"  [{NEON_CYAN}]Fetching price data...[/]", end="")
     returns = compute_forward_returns(ticker, matches["date"])
@@ -660,6 +660,7 @@ def analyze(ticker: str, headline: str, top_n: int = 20,
 
     verdict = compute_verdict(matches, returns)
     render_output(ticker, headline, keywords, matches, returns, verdict, live_score)
+    return {"matches": matches, "returns": returns, "verdict": verdict, "live_score": live_score}
 
 
 def analyze_multi(tickers: list[str], headline: str, top_n: int = 20,

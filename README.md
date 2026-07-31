@@ -6,7 +6,9 @@ STARK is a quantitative sentiment analysis platform built to answer one question
 
 The system combines a dataset of **85 million+ pre-scored financial headlines** (spanning 2009 to 2026) with **FinBERT**, a BERT-based NLP model fine-tuned specifically for financial text, to produce actionable sentiment verdicts grounded in real historical outcomes. Rather than relying on opinion or speculation, every verdict is backed by data: the system finds historically similar headlines via **local embedding-based semantic search** (BAAI/bge-base-en-v1.5 — "Apple tops forecasts" matches "iPhone sales help Apple beat estimates" even with zero shared keywords), looks up what the stock actually did in the 1, 5, and 10 trading days that followed, and synthesizes a weighted signal from both the sentiment distribution and the observed price action.
 
-This repository contains three independent tools that share a common analysis backend. You do not need to run them in sequence — each one is a standalone entry point designed for a different use case:
+The flagship entry point is the **Unified Flow** (`stark.py`), which answers the whole question in one command: `python stark.py AAPL "Apple crushes quarterly estimates"` runs the headline analysis (FinBERT score, semantically similar historical headlines, forward returns, verdict), then immediately backtests trading that signal — long whenever the ticker's smoothed news sentiment reaches this headline's level, with trend filter, next-day fills, and costs — and shows the equity curve against buy-and-hold.
+
+The individual tools remain standalone entry points sharing the same analysis backend:
 
 - **Headline Analyzer** — a command-line tool for fast, scriptable headline analysis. Supports single tickers, multi-ticker comparison, time-windowed filtering, and an interactive REPL mode.
 - **Strategy Backtester** — a full sentiment-momentum backtest over the same headline dataset: equity curve vs. buy-and-hold, Sharpe, max drawdown, transaction costs, and volatility-targeted sizing, with next-day execution to avoid look-ahead bias. Includes the visual forensics chart (buy/sell markers, sentiment oscillator) and FinBERT headline overlays.
@@ -49,6 +51,9 @@ This deduplicates the raw headlines, sorts them by ticker for fast row-group pru
 ### Quick Start
 
 ```bash
+# The unified flow: headline -> verdict -> equity curve
+python stark.py AAPL "earnings beat expectations"
+
 # Launch the interactive tool selector
 python main.py
 
@@ -158,6 +163,7 @@ Reads the raw `STARK_SCORED_FIXED.parquet`, deduplicates headlines per ticker, s
 
 ```
 main.py                  <- launcher menu (pick a tool)
+stark.py                 <- unified flow: analyzer + backtester in one command
 headline_analyzer.py     <- core analysis engine
       |            |            \
       v            v             v

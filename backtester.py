@@ -247,7 +247,7 @@ def print_signal_summary(summary):
 
 # ── Plotting ──────────────────────────────────────────────────────────────
 
-def plot_ticker_forensics(ticker, df, headline_overlay=None):
+def plot_ticker_forensics(ticker, df, headline_overlay=None, threshold=SENTIMENT_THRESHOLD):
     subset = df.copy()
 
     finbert_score, signal_zones, summary = None, None, None
@@ -329,7 +329,7 @@ def plot_ticker_forensics(ticker, df, headline_overlay=None):
 
     # --- BOTTOM PANEL: SENTIMENT INDICATOR ---
     ax2.plot(subset.index, subset["smooth_sentiment"], color="purple", label="3-Day Sentiment", linewidth=1.5)
-    ax2.axhline(y=SENTIMENT_THRESHOLD, color="green", linestyle=":", label=f"Buy Threshold ({SENTIMENT_THRESHOLD})")
+    ax2.axhline(y=threshold, color="green", linestyle=":", label=f"Buy Threshold ({threshold:+.3f})")
     ax2.axhline(y=0, color="gray", linewidth=0.5)
 
     if finbert_score is not None:

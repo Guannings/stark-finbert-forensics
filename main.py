@@ -19,21 +19,26 @@ BANNER = """
 
 TOOLS = {
     "1": {
+        "name": "Unified Flow",
+        "desc": "Headline -> verdict -> equity curve of trading that signal (start here)",
+        "module": "stark",
+    },
+    "2": {
         "name": "Headline Analyzer",
         "desc": "Score a news headline against historical data for any ticker",
         "module": "headline_analyzer",
     },
-    "2": {
+    "3": {
         "name": "Strategy Backtester",
-        "desc": "Visual backtesting with sentiment signals + FinBERT overlay",
+        "desc": "Sentiment-momentum backtest: equity curve, Sharpe, drawdown vs buy & hold",
         "module": "backtester",
     },
-    "3": {
+    "4": {
         "name": "Terminal Dashboard",
         "desc": "Full PyQt6 GUI with price charts, sentiment, and headline analysis",
         "module": "stark_terminal",
     },
-    "4": {
+    "5": {
         "name": "Build Headline Index",
         "desc": "Pre-process headlines into a fast search index (run once)",
         "module": "build_index",
@@ -50,7 +55,7 @@ def main():
 
     print("    [q]  Quit\n")
 
-    choice = input("  Select tool (1-4): ").strip()
+    choice = input("  Select tool (1-5): ").strip()
 
     if choice in ("q", "quit", "exit"):
         return
