@@ -19,6 +19,7 @@ from headline_analyzer import (
     compute_forward_returns, compute_verdict,
     INDEX_PATH, PARQUET_PATH,
 )
+import backtester as bt
 
 # ── Styling ──────────────────────────────────────────────────────────
 DARK_BG = "#0b0c0e"
@@ -194,6 +195,27 @@ class StarkTerminal(QMainWindow):
         results_header.addWidget(self.finbert_label)
         results_layout.addLayout(results_header)
 
+        # ── Signal backtest: "how would trading this headline have performed?" ──
+        self.signal_label = QLabel("")
+        self.signal_label.setStyleSheet(
+            f"color: {DIM_TEXT}; font-size: 12px; font-family: monospace; border: none;"
+        )
+        self.signal_label.setWordWrap(True)
+        results_layout.addWidget(self.signal_label)
+
+        self.equity_plot = pg.PlotWidget(
+            title="SIGNAL EQUITY CURVE",
+            axisItems={"bottom": DateAxis(orientation="bottom")},
+        )
+        self.equity_plot.showGrid(x=True, y=True, alpha=0.15)
+        self.equity_plot.setLabel("left", "Equity ($, log)")
+        self.equity_plot.getAxis("left").setWidth(70)
+        self.equity_plot.setLogMode(y=True)
+        self.equity_plot.addLegend(offset=(10, 10))
+        self.equity_plot.setMinimumHeight(200)
+        self.equity_plot.setVisible(False)
+        results_layout.addWidget(self.equity_plot)
+
         # Matches table
         self.matches_table = QTableWidget()
         self.matches_table.setColumnCount(5)
@@ -328,10 +350,66 @@ class StarkTerminal(QMainWindow):
                 f"HEADLINE ANALYSIS COMPLETE  ·  {len(matches)} matches for {ticker}"
             )
             self.status_label.setStyleSheet(f"color: {NEON_GREEN}; font-family: monospace; font-size: 12px;")
+            QApplication.processEvents()
+
+            # ── Signal backtest: trade headlines like this one ───────────
+            self._run_signal_backtest(ticker, live_score)
 
         except Exception as e:
             self.status_label.setText(f"ANALYSIS ERROR: {e}")
             self.status_label.setStyleSheet(f"color: {NEON_RED}; font-family: monospace; font-size: 12px;")
+
+    def _run_signal_backtest(self, ticker: str, live_score: float | None):
+        """Backtest going long whenever smoothed sentiment >= this headline's
+        FinBERT score (plus the trend filter), and draw the equity curve."""
+        self.equity_plot.clear()
+        if live_score is None:
+            self.signal_label.setText("Signal backtest skipped — FinBERT score unavailable.")
+            self.equity_plot.setVisible(False)
+            return
+
+        try:
+            frame = bt.build_frame(ticker)
+            if frame is None or frame["daily_score"].notna().sum() == 0:
+                self.signal_label.setText(f"No daily sentiment history for {ticker} — cannot backtest signal.")
+                self.equity_plot.setVisible(False)
+                return
+
+            df = bt.run_backtest(bt.apply_signal(frame, live_score))
+            m = bt.compute_metrics(df)
+            s, b = m["strategy"], m["buyhold"]
+
+            def pct(x):
+                return f"{x * 100:+.1f}%" if x == x else "—"
+
+            self.signal_label.setText(
+                f"SIGNAL: long when 3-day sentiment ≥ {live_score:+.3f} (this headline) & price > 50-day SMA."
+                f"   Strategy: total {pct(s.get('total_return', float('nan')))}, "
+                f"Sharpe {s.get('sharpe', float('nan')):.2f}, maxDD {pct(s.get('max_drawdown', float('nan')))}, "
+                f"{m['n_trades']} trades, {pct(m['exposure'])[1:]} in market"
+                f"   |   Buy & Hold: total {pct(b.get('total_return', float('nan')))}, "
+                f"Sharpe {b.get('sharpe', float('nan')):.2f}"
+            )
+            sh = s.get("sharpe", float("nan"))
+            self.signal_label.setStyleSheet(
+                f"color: {NEON_GREEN if sh == sh and sh > 0 else DIM_TEXT}; "
+                f"font-size: 12px; font-family: monospace; border: none;"
+            )
+
+            x = df.index.astype(np.int64) // 10**9
+            self.equity_plot.plot(
+                x, df["equity"].values,
+                pen=pg.mkPen(color=NEON_GREEN, width=2), name="Strategy",
+            )
+            self.equity_plot.plot(
+                x, df["buyhold_equity"].values,
+                pen=pg.mkPen(color=DIM_TEXT, width=1, style=Qt.PenStyle.DashLine), name="Buy & Hold",
+            )
+            self.equity_plot.setVisible(True)
+
+        except Exception as e:
+            self.signal_label.setText(f"Signal backtest error: {e}")
+            self.equity_plot.setVisible(False)
 
     # ── core logic ───────────────────────────────────────────────────
     def load_data(self):
