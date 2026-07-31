@@ -25,10 +25,11 @@ INITIAL_CAPITAL = 1_000_000
 TARGET_VOLATILITY = 0.40      # annualized vol target for position sizing
 MAX_LEVERAGE = 1.0            # single-ticker backtest: cap at fully invested
 TRANSACTION_COST = 0.0015     # 15 bps per side, applied on position changes
-# A 2026-07 sweep over AAPL/NVDA/TSLA showed 0.0 (any positive smoothed
-# sentiment + trend filter) dominates stricter thresholds, which leave the
-# strategy >90% in cash. In-sample on three tickers — treat as a starting
-# point, not a tuned result.
+# Default 0.0 (positive smoothed sentiment + trend filter). Note: an
+# out-of-sample study (validate_threshold.py) shows the sentiment gate adds
+# no risk-adjusted edge here — the trend filter carries it, and buy-and-hold
+# beats both. This threshold is a reasonable demonstrator, not a money-maker;
+# see the "Validation" section of the README.
 SENTIMENT_THRESHOLD = 0.0
 SENTIMENT_FFILL_DAYS = 5      # carry sentiment forward over quiet news days
 

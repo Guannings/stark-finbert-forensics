@@ -171,6 +171,7 @@ backtester.py   stark_terminal.py   semantic_search.py
 (matplotlib)    (PyQt6 + pyqtgraph) (embeddings + per-ticker cache)
 
 build_index.py           <- one-time index builder
+validate_threshold.py    <- out-of-sample study of the sentiment signal
 ```
 
 **`headline_analyzer.py`** is the shared backend. It exposes the following functions that the other tools import:
@@ -210,7 +211,24 @@ Recency weighting applies an exponential decay with a half-life of 180 days, so 
 
 ### Backtester Strategy
 
-The backtester implements a sentiment-momentum strategy: go long when the 3-day smoothed sentiment is positive (threshold 0.0, configurable — a sweep across AAPL/NVDA/TSLA showed stricter thresholds like the original 0.5 keep the strategy >90% in cash and underperform at every level) AND the closing price is above the 50-day SMA. A signal generated on day *t* is executed on day *t+1*, so the backtest never trades on information it wouldn't have had yet. Position sizing is volatility-targeted (40% annualized target, capped at fully invested), and 15 bps of transaction cost is charged on every position change. The equity curve compounds daily strategy returns from an initial $1,000,000 and is compared against buy-and-hold over the same period. Trade markers on the chart are color-coded by the sentiment score at the time of entry/exit using a red-yellow-green colormap.
+The backtester implements a sentiment-momentum strategy: go long when the 3-day smoothed sentiment clears a threshold (default 0.0, configurable) AND the closing price is above the 50-day SMA. A signal generated on day *t* is executed on day *t+1*, so the backtest never trades on information it wouldn't have had yet. Position sizing is volatility-targeted (40% annualized target, capped at fully invested), and 15 bps of transaction cost is charged on every position change. The equity curve compounds daily strategy returns from an initial $1,000,000 and is compared against buy-and-hold over the same period. Trade markers on the chart are color-coded by the sentiment score at the time of entry/exit using a red-yellow-green colormap.
+
+### Does the sentiment signal actually work? (Validation)
+
+`validate_threshold.py` runs an honest out-of-sample study over 25 large-cap names, and the answer is worth stating plainly: **as a long/cash market-timing signal, daily headline sentiment adds no risk-adjusted edge.**
+
+The threshold was chosen to maximize mean Sharpe on a 13-ticker train set and then measured, untouched, on a disjoint 12-ticker test set. Both sets independently pick the *lowest* threshold tested (-0.2), with a zero generalization gap — but the absolute Sharpe there is only ~0.06. That monotonic "lower is always better" pattern is the tell: pushing the threshold down just disables the sentiment gate. Decomposing the signal confirms it (mean Sharpe across all 25 tickers):
+
+| Signal | Mean Sharpe |
+|---|---|
+| Buy & Hold | **+0.52** |
+| Price > 50-day SMA only (no sentiment) | +0.27 |
+| Sentiment > 0 only (no trend) | +0.06 |
+| Combined (sentiment AND trend) | −0.01 |
+
+The trend filter carries what little edge exists; the sentiment gate is roughly zero on its own and *removes* value when combined (−0.01 < +0.27). Buy-and-hold beats every variant.
+
+This isn't a failure of the project — it's the project working as intended: a data-backed system honest enough to falsify its own strategy. It also points somewhere specific. Sentiment's value shows up not in this coarse daily-timing form but in the **event-study forward returns the analyzer reports** — "after headlines like this one, the stock did X over 1/5/10 days" — which is a conditional, event-driven measurement, not a continuous market-timing gate. Extending sentiment into a long/short book, or to intraday/event horizons, is the natural next research direction.
 
 ---
 
