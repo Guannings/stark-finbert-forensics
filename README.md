@@ -204,7 +204,7 @@ Recency weighting applies an exponential decay with a half-life of 180 days, so 
 
 ### Backtester Strategy
 
-The backtester implements a sentiment-momentum strategy: go long when the 3-day smoothed sentiment exceeds 0.5 AND the closing price is above the 50-day SMA. A signal generated on day *t* is executed on day *t+1*, so the backtest never trades on information it wouldn't have had yet. Position sizing is volatility-targeted (40% annualized target, capped at fully invested), and 15 bps of transaction cost is charged on every position change. The equity curve compounds daily strategy returns from an initial $1,000,000 and is compared against buy-and-hold over the same period. Trade markers on the chart are color-coded by the sentiment score at the time of entry/exit using a red-yellow-green colormap.
+The backtester implements a sentiment-momentum strategy: go long when the 3-day smoothed sentiment is positive (threshold 0.0, configurable — a sweep across AAPL/NVDA/TSLA showed stricter thresholds like the original 0.5 keep the strategy >90% in cash and underperform at every level) AND the closing price is above the 50-day SMA. A signal generated on day *t* is executed on day *t+1*, so the backtest never trades on information it wouldn't have had yet. Position sizing is volatility-targeted (40% annualized target, capped at fully invested), and 15 bps of transaction cost is charged on every position change. The equity curve compounds daily strategy returns from an initial $1,000,000 and is compared against buy-and-hold over the same period. Trade markers on the chart are color-coded by the sentiment score at the time of entry/exit using a red-yellow-green colormap.
 
 ---
 
@@ -226,7 +226,7 @@ All investments involve risk, including the possible loss of principal.
 
 **b. Model Limitations:** The headline similarity search uses embedding cosine similarity (with a keyword-overlap fallback), which captures paraphrase but can still surface topically related headlines describing materially different events, and does not reliably capture sarcasm or context-dependent meaning. FinBERT, while fine-tuned on financial text, is a probabilistic model that can produce incorrect or misleading sentiment scores, particularly on ambiguous, novel, or domain-specific headlines.
 
-**c. Signal Limitations:** The sentiment-momentum strategy implemented in the backtester uses fixed thresholds (sentiment > 0.5, price > 50-day SMA) that were not optimized for any specific market regime. These thresholds may fail in unprecedented macroeconomic environments, during liquidity crises, or in markets with structural changes.
+**c. Signal Limitations:** The sentiment-momentum strategy implemented in the backtester uses fixed thresholds (sentiment > 0.0, price > 50-day SMA) chosen from an in-sample sweep over only three tickers and not optimized for any specific market regime. These thresholds may fail in unprecedented macroeconomic environments, during liquidity crises, or in markets with structural changes.
 
 **d. Data Accuracy:** Market data fetched from third-party APIs (Yahoo Finance via yfinance) may be delayed, adjusted, inaccurate, or incomplete. Headline sentiment scores in the dataset were computed via batch processing and may contain errors. The author makes no guarantee regarding the accuracy, completeness, or timeliness of any data used by this software.
 

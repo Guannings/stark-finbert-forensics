@@ -25,7 +25,11 @@ INITIAL_CAPITAL = 1_000_000
 TARGET_VOLATILITY = 0.40      # annualized vol target for position sizing
 MAX_LEVERAGE = 1.0            # single-ticker backtest: cap at fully invested
 TRANSACTION_COST = 0.0015     # 15 bps per side, applied on position changes
-SENTIMENT_THRESHOLD = 0.5
+# A 2026-07 sweep over AAPL/NVDA/TSLA showed 0.0 (any positive smoothed
+# sentiment + trend filter) dominates stricter thresholds, which leave the
+# strategy >90% in cash. In-sample on three tickers — treat as a starting
+# point, not a tuned result.
+SENTIMENT_THRESHOLD = 0.0
 SENTIMENT_FFILL_DAYS = 5      # carry sentiment forward over quiet news days
 
 
@@ -83,9 +87,15 @@ def build_frame(ticker: str) -> pd.DataFrame | None:
     df["smooth_sentiment"] = df["daily_score"].rolling(3, min_periods=1).mean()
     df["SMA_50"] = df["close"].rolling(50).mean()
 
-    # 1 = long, 0 = cash (decided on day t, executed on day t+1)
+    return apply_signal(df, SENTIMENT_THRESHOLD)
+
+
+def apply_signal(df: pd.DataFrame, threshold: float) -> pd.DataFrame:
+    """Set the long/cash signal: 1 when smoothed sentiment clears the threshold
+    and price is above trend (decided on day t, executed on day t+1)."""
+    df = df.copy()
     df["signal"] = np.where(
-        (df["smooth_sentiment"] > SENTIMENT_THRESHOLD) & (df["close"] > df["SMA_50"]),
+        (df["smooth_sentiment"] > threshold) & (df["close"] > df["SMA_50"]),
         1, 0,
     )
     return df
